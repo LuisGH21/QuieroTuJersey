@@ -1,0 +1,103 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo | QuieroTuJersey</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        h1 {
+            text-align: center;
+            color: #60a5fa;
+            margin-bottom: 20px;
+        }
+
+        .subtitulo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .catalogo {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 20px;
+            max-width: 1040px;
+            margin: 0 auto;
+        }
+
+        .jersey {
+            background: #1e293b;
+            padding: 30px 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .jersey h2 {
+            font-size: 26px;
+        }
+
+        .precio {
+            color: #4ade80;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .boton {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 12px 20px;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
+        .boton:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>QuieroTuJersey</h1>
+
+    <p class="subtitulo">
+        Catálogo de jerseys de fútbol mexicano
+    </p>
+
+    <div class="catalogo">
+        {% for jersey in jerseys %}
+            <div class="jersey">
+                <h2>{{ jersey.equipo }}</h2>
+
+                <p>Temporada: {{ jersey.temporada }}</p>
+
+                <p>Versión: {{ jersey.tipo }}</p>
+
+                <p class="precio">
+                    ${{ jersey.precio }} MXN
+                </p>
+
+                <p>Disponibles: {{ jersey.stock }}</p>
+
+                <a
+                    class="boton"
+                    href="{{ url_for('detalle_jersey', id_jersey=jersey.id) }}"
+                >
+                    Ver detalles
+                </a>
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

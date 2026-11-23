@@ -1,0 +1,45 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proyecto Final Unix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+            text-align: center;
+            padding: 80px 20px;
+        }
+
+        .contenedor {
+            max-width: 650px;
+            margin: auto;
+            padding: 40px;
+            background: #1e293b;
+            border-radius: 15px;
+        }
+
+        h1 {
+            color: #60a5fa;
+        }
+
+        .estado {
+            color: #4ade80;
+        }
+    </style>
+</head>
+<body>
+    <div class="contenedor">
+        <h1>{{ titulo }}</h1>
+        <h2>Proyecto Final - Unix</h2>
+
+        <p>Sistema operativo: {{ sistema }}</p>
+        <p>Servidor de aplicaciones: Flask</p>
+
+        <p class="estado">{{ mensaje }}</p>
+    </div>
+</body>
+</html>

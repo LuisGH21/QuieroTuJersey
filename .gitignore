@@ -1,0 +1,53 @@
+# Configuración local
+.env
+.env.*
+.envrc
+*.local
+.vscode/
+instance/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+build/
+dist/
+*.egg-info/
+
+# Credenciales y claves
+credentials/
+credentials.*
+secrets/
+secrets.*
+service-account*.json
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.pgpass
+.netrc
+
+# Bases de datos, respaldos y datos privados
+private/
+backups/
+dumps/
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.sql.bz2
+*.sql.xz
+
+# Registros y macOS
+*.log
+.DS_Store

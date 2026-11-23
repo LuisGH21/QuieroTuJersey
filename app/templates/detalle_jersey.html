@@ -1,0 +1,83 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ jersey.equipo }} | QuieroTuJersey</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        .producto {
+            max-width: 650px;
+            margin: 40px auto;
+            padding: 35px;
+            background: #1e293b;
+            border-radius: 14px;
+        }
+
+        h1 {
+            color: #60a5fa;
+        }
+
+        .precio {
+            color: #4ade80;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .talla {
+            padding: 12px;
+            margin: 8px 0;
+            background: #334155;
+            border-radius: 8px;
+        }
+
+        a {
+            color: #93c5fd;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="producto">
+        <a href="{{ url_for('mostrar_jerseys') }}">
+            ← Volver al catálogo
+        </a>
+
+        <h1>{{ jersey.equipo }}</h1>
+
+        <h2>Jersey {{ jersey.tipo }}</h2>
+
+        <p>Temporada: {{ jersey.temporada }}</p>
+
+        <p>{{ jersey.descripcion }}</p>
+
+        <p class="precio">
+            ${{ jersey.precio }} MXN
+        </p>
+
+        <h3>Disponibilidad por talla</h3>
+
+        {% for talla, stock in tallas %}
+            <div class="talla">
+                Talla {{ talla }} — {{ stock }} disponibles
+            </div>
+        {% else %}
+            <p>No hay tallas registradas.</p>
+        {% endfor %}
+    </div>
+</body>
+</html>
