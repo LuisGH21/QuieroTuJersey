@@ -1,0 +1,103 @@
+{% extends "admin_base.html" %}
+
+{% block titulo %}{{ titulo }}{% endblock %}
+
+{% block contenido %}
+    <h1>{{ titulo }}</h1>
+
+    <a href="{{ url_for('admin_jerseys') }}">← Regresar a la lista</a>
+
+    <form class="tarjeta" method="POST">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+        <label for="id_equipo">Equipo</label>
+        <select id="id_equipo" name="id_equipo" required>
+            <option value="">Selecciona un equipo</option>
+            {% for id_equipo, nombre in equipos %}
+                <option
+                    value="{{ id_equipo }}"
+                    {% if datos.id_equipo == id_equipo %}selected{% endif %}
+                >
+                    {{ nombre }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label for="temporada">Temporada</label>
+        <input
+            type="text"
+            id="temporada"
+            name="temporada"
+            maxlength="20"
+            placeholder="2026/27"
+            value="{{ datos.temporada or '' }}"
+            required
+        >
+
+        <label for="tipo">Tipo</label>
+        <input
+            type="text"
+            id="tipo"
+            name="tipo"
+            maxlength="30"
+            placeholder="Local, Visitante, Tercero..."
+            value="{{ datos.tipo or '' }}"
+            required
+        >
+
+        <label for="precio">Precio (MXN)</label>
+        <input
+            type="number"
+            id="precio"
+            name="precio"
+            min="0.01"
+            step="0.01"
+            value="{{ datos.precio or '' }}"
+            required
+        >
+
+        <label for="descripcion">Descripción</label>
+        <textarea id="descripcion" name="descripcion" rows="3">{{ datos.descripcion or '' }}</textarea>
+
+        <label>Stock por talla</label>
+        <table>
+            <thead>
+                <tr>
+                    {% for talla in tallas %}
+                        <th>{{ talla }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    {% for talla in tallas %}
+                        <td>
+                            <input
+                                type="number"
+                                name="stock_{{ talla }}"
+                                min="0"
+                                step="1"
+                                value="{{ datos.stock.get(talla, 0) }}"
+                                required
+                            >
+                        </td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+
+        <label>
+            <input
+                type="checkbox"
+                name="activo"
+                style="width: auto;"
+                {% if datos.activo %}checked{% endif %}
+            >
+            Visible en el catálogo
+        </label>
+
+        <p>
+            <button class="boton verde" type="submit">Guardar</button>
+        </p>
+    </form>
+{% endblock %}
