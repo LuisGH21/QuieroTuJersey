@@ -78,6 +78,14 @@
             font-weight: bold;
         }
 
+        .alerta {
+            padding: 12px;
+            margin: 15px 0;
+            background: #334155;
+            border-radius: 8px;
+            color: #fbbf24;
+        }
+
         a {
             color: #93c5fd;
             text-decoration: none;
@@ -91,6 +99,12 @@
             ← Volver al catálogo
         </a>
 
+        <p>
+            <a href="{{ url_for('ver_carrito') }}">
+                Ver carrito de compras
+            </a>
+        </p>
+
         <h1>{{ jersey.equipo }}</h1>
         <h2>Jersey {{ jersey.tipo }}</h2>
 
@@ -101,45 +115,52 @@
             ${{ jersey.precio }} MXN
         </p>
 
-        <div class="campo">
-            <label for="talla">Selecciona tu talla</label>
+        {% for mensaje in get_flashed_messages() %}
+            <div class="alerta">{{ mensaje }}</div>
+        {% endfor %}
 
-            <select id="talla">
-                <option value="">Selecciona una talla</option>
-
-                {% for talla, stock in tallas %}
-                    <option
-                        value="{{ talla }}"
-                        data-stock="{{ stock }}"
-                        {% if stock == 0 %}disabled{% endif %}
-                    >
-                        {{ talla }} — {{ stock }} disponibles
-                    </option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="campo">
-            <label for="cantidad">Cantidad</label>
-
-            <input
-                type="number"
-                id="cantidad"
-                min="1"
-                value="1"
-            >
-        </div>
-
-        <button
-            class="boton"
-            id="agregar"
-            type="button"
-            disabled
+        <form
+            method="POST"
+            action="{{ url_for('agregar_al_carrito', id_jersey=jersey.id) }}"
         >
-            Agregar al carrito
-        </button>
+            <div class="campo">
+                <label for="talla">Selecciona tu talla</label>
 
-        <p class="mensaje" id="mensaje"></p>
+                <select id="talla" name="talla" required>
+                    <option value="">Selecciona una talla</option>
+
+                    {% for talla, stock in tallas %}
+                        <option
+                            value="{{ talla }}"
+                            data-stock="{{ stock }}"
+                            {% if stock == 0 %}disabled{% endif %}
+                        >
+                            {{ talla }} — {{ stock }} disponibles
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="campo">
+                <label for="cantidad">Cantidad</label>
+
+                <input
+                    type="number"
+                    id="cantidad"
+                    name="cantidad"
+                    min="1"
+                    step="1"
+                    value="1"
+                    required
+                >
+            </div>
+
+            <button class="boton" id="agregar" type="submit" disabled>
+                Agregar al carrito
+            </button>
+
+            <p class="mensaje" id="mensaje"></p>
+        </form>
     </div>
 
     <script>
@@ -153,40 +174,34 @@
             const stock = Number(opcion.dataset.stock || 0);
             const unidades = Number(cantidad.value);
 
-            const valido =
-                talla.value !== "" &&
-                Number.isInteger(unidades) &&
-                unidades >= 1 &&
-                unidades <= stock;
-
-            boton.disabled = !valido;
-
             if (talla.value === "") {
+                cantidad.removeAttribute("max");
+                boton.disabled = true;
                 mensaje.textContent = "Selecciona una talla.";
-            } else if (!valido) {
+                return;
+            }
+
+            cantidad.max = stock;
+
+            if (
+                cantidad.value === "" ||
+                !Number.isInteger(unidades) ||
+                unidades < 1 ||
+                unidades > stock
+            ) {
+                boton.disabled = true;
                 mensaje.textContent =
                     "Cantidad no válida. Disponibles: " + stock;
-            } else {
-                mensaje.textContent =
-                    "Disponible para agregar al carrito.";
+                return;
             }
+
+            boton.disabled = false;
+            mensaje.textContent =
+                "Disponibles: " + stock + " unidades.";
         }
 
         talla.addEventListener("change", validarSeleccion);
         cantidad.addEventListener("input", validarSeleccion);
-
-        boton.addEventListener("click", function () {
-            validarSeleccion();
-
-            if (!boton.disabled) {
-                mensaje.textContent =
-                    "Selección válida: " +
-                    cantidad.value +
-                    " jersey(s), talla " +
-                    talla.value +
-                    ". El carrito se implementará después.";
-            }
-        });
 
         validarSeleccion();
     </script>
