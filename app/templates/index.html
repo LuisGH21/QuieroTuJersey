@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Proyecto Final Unix</title>
+    <title>QuieroTuJersey</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -26,20 +25,41 @@
             color: #60a5fa;
         }
 
-        .estado {
-            color: #4ade80;
+        .acciones a {
+            display: inline-block;
+            margin: 10px;
+            padding: 12px 24px;
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+        }
+
+        .acciones a:hover {
+            background: #1d4ed8;
+        }
+
+        .info {
+            margin-top: 30px;
+            color: #94a3b8;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
     <div class="contenedor">
-        <h1>{{ titulo }}</h1>
-        <h2>Proyecto Final - Unix</h2>
+        <h1>QuieroTuJersey</h1>
+        <h2>Tienda de jerseys de la Liga MX</h2>
 
-        <p>Sistema operativo: {{ sistema }}</p>
-        <p>Servidor de aplicaciones: Flask</p>
+        <div class="acciones">
+            <a href="{{ url_for('mostrar_jerseys') }}">Ver catálogo</a>
+            <a href="{{ url_for('ver_carrito') }}">Ver carrito</a>
+        </div>
 
-        <p class="estado">{{ mensaje }}</p>
+        <div class="info">
+            <p>Sistema operativo: {{ sistema }}</p>
+            <p>Python {{ version_python }} · Flask · PostgreSQL</p>
+        </div>
     </div>
 </body>
 </html>

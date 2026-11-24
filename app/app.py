@@ -1,5 +1,6 @@
 
 import os
+import platform
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,23 +31,29 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 def inicio():
     return render_template(
         "index.html",
-        titulo="Mi primera aplicación dinámica",
-        sistema="macOS ARM64",
-        mensaje="Flask y HTML conectados correctamente"
+        sistema=platform.platform(),
+        version_python=platform.python_version()
     )
-
-
-@app.route("/saludo")
-def saludo():
-    return "<h1>Bienvenido a mi proyecto final Unix</h1>"
 
 
 @app.route("/estado")
 def estado():
+    try:
+        with obtener_conexion() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute("SELECT version();")
+                version_bd = cursor.fetchone()[0]
+        estado_bd = "conectada"
+    except Exception:
+        version_bd = None
+        estado_bd = "sin conexion"
+
     return {
-        "servidor": "Flask",
-        "sistema": "macOS",
-        "estado": "activo"
+        "aplicacion": "QuieroTuJersey",
+        "sistema": platform.platform(),
+        "python": platform.python_version(),
+        "base_de_datos": estado_bd,
+        "version_bd": version_bd
     }
 
 
@@ -362,4 +369,8 @@ def eliminar_del_carrito(id_jersey):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5001, debug=True)
+    app.run(
+        host=os.environ.get("FLASK_HOST", "127.0.0.1"),
+        port=int(os.environ.get("FLASK_PORT", "5001")),
+        debug=os.environ.get("FLASK_DEBUG", "0") == "1"
+    )

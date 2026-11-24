@@ -51,3 +51,6 @@ dumps/
 # Registros y macOS
 *.log
 .DS_Store
+
+# La plantilla sí se versiona
+!.env.example
