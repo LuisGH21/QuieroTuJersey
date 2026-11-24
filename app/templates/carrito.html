@@ -102,6 +102,21 @@
         .enlace-producto {
             font-size: 14px;
         }
+
+        .acciones-finales {
+            text-align: right;
+        }
+
+        .continuar {
+            display: inline-block;
+            background: #16a34a;
+            padding: 14px 22px;
+            color: white;
+        }
+
+        .continuar:hover {
+            background: #15803d;
+        }
     </style>
 </head>
 
@@ -220,6 +235,15 @@
 
             <p class="total">
                 Total: ${{ "%.2f"|format(total) }} MXN
+            </p>
+
+            <p class="acciones-finales">
+                <a
+                    class="boton continuar"
+                    href="{{ url_for('checkout') }}"
+                >
+                    Continuar con la compra
+                </a>
             </p>
 
         {% else %}

@@ -1,9 +1,12 @@
 
+import json
 import os
 import platform
+import re
 from decimal import Decimal
 from pathlib import Path
 
+import psycopg
 from dotenv import load_dotenv
 from flask import (
     Flask,
@@ -61,24 +64,14 @@ def estado():
 def mostrar_jerseys():
     consulta = """
         SELECT
-            j.id_jersey,
-            e.nombre AS equipo,
-            j.temporada,
-            j.tipo,
-            j.precio,
-            COALESCE(SUM(i.stock), 0) AS stock
-        FROM jerseys j
-        INNER JOIN equipos e
-            ON j.id_equipo = e.id_equipo
-        LEFT JOIN inventario i
-            ON j.id_jersey = i.id_jersey
-        GROUP BY
-            j.id_jersey,
-            e.nombre,
-            j.temporada,
-            j.tipo,
-            j.precio
-        ORDER BY j.id_jersey;
+            id_jersey,
+            equipo,
+            temporada,
+            tipo,
+            precio,
+            stock_total
+        FROM v_catalogo
+        ORDER BY id_jersey;
     """
 
     with obtener_conexion() as conexion:
@@ -114,7 +107,8 @@ def detalle_jersey(id_jersey):
         FROM jerseys j
         INNER JOIN equipos e
             ON j.id_equipo = e.id_equipo
-        WHERE j.id_jersey = %s;
+        WHERE j.id_jersey = %s
+          AND j.activo;
     """
 
     consulta_tallas = """
@@ -171,9 +165,13 @@ def agregar_al_carrito(id_jersey):
         return redirect(url_for("detalle_jersey", id_jersey=id_jersey))
 
     consulta = """
-        SELECT stock
-        FROM inventario
-        WHERE id_jersey = %s AND talla = %s;
+        SELECT i.stock
+        FROM inventario i
+        INNER JOIN jerseys j
+            ON j.id_jersey = i.id_jersey
+        WHERE i.id_jersey = %s
+          AND i.talla = %s
+          AND j.activo;
     """
 
     with obtener_conexion() as conexion:
@@ -226,9 +224,8 @@ def agregar_al_carrito(id_jersey):
     return redirect(url_for("ver_carrito"))
 
 
-@app.route("/carrito")
-def ver_carrito():
-    carrito = session.get("carrito", [])
+def construir_carrito(carrito):
+    """Consulta precio y stock vigentes de cada producto del carrito."""
     productos = []
     total = Decimal("0.00")
 
@@ -279,6 +276,14 @@ def ver_carrito():
                     })
 
                     total += subtotal
+
+    return productos, total
+
+
+@app.route("/carrito")
+def ver_carrito():
+    carrito = session.get("carrito", [])
+    productos, total = construir_carrito(carrito)
 
     return render_template(
         "carrito.html",
@@ -366,6 +371,158 @@ def eliminar_del_carrito(id_jersey):
 
     flash("Producto eliminado del carrito.")
     return redirect(url_for("ver_carrito"))
+
+
+PATRON_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def validar_cliente(nombre, email):
+    if len(nombre) < 2 or len(nombre) > 150:
+        return "Escribe un nombre de entre 2 y 150 caracteres."
+
+    if len(email) > 150 or not PATRON_EMAIL.match(email):
+        return "Escribe un correo electrónico válido."
+
+    return None
+
+
+@app.route("/checkout", methods=["GET", "POST"])
+def checkout():
+    carrito = session.get("carrito", [])
+
+    if not carrito:
+        flash("Tu carrito está vacío.")
+        return redirect(url_for("ver_carrito"))
+
+    productos, total = construir_carrito(carrito)
+    nombre = request.form.get("nombre", "").strip()
+    email = request.form.get("email", "").strip()
+
+    if request.method == "POST":
+        error = validar_cliente(nombre, email)
+
+        if error:
+            flash(error)
+            return render_template(
+                "checkout.html",
+                productos=productos,
+                total=total,
+                nombre=nombre,
+                email=email
+            )
+
+        articulos = [
+            {
+                "id_jersey": item["id_jersey"],
+                "talla": item["talla"],
+                "cantidad": item["cantidad"]
+            }
+            for item in carrito
+        ]
+
+        try:
+            with obtener_conexion() as conexion:
+                with conexion.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT confirmar_pedido(%s, %s, %s::jsonb);",
+                        (nombre, email, json.dumps(articulos))
+                    )
+                    id_pedido = cursor.fetchone()[0]
+        except psycopg.errors.RaiseException as error_bd:
+            flash(
+                error_bd.diag.message_primary
+                or "No se pudo confirmar el pedido."
+            )
+            return redirect(url_for("ver_carrito"))
+
+        session["carrito"] = []
+
+        mis_pedidos = session.get("mis_pedidos", [])
+        mis_pedidos.append(id_pedido)
+        session["mis_pedidos"] = mis_pedidos[-20:]
+
+        return redirect(url_for("ver_pedido", id_pedido=id_pedido))
+
+    return render_template(
+        "checkout.html",
+        productos=productos,
+        total=total,
+        nombre=nombre,
+        email=email
+    )
+
+
+@app.route("/pedido/<int:id_pedido>")
+def ver_pedido(id_pedido):
+    # Solo se muestran los pedidos hechos desde este navegador
+    if id_pedido not in session.get("mis_pedidos", []):
+        abort(404)
+
+    consulta_pedido = """
+        SELECT id_pedido, fecha, cliente, email, estado, total, articulos
+        FROM v_pedidos_resumen
+        WHERE id_pedido = %s;
+    """
+
+    consulta_detalle = """
+        SELECT
+            e.nombre,
+            j.temporada,
+            j.tipo,
+            i.talla,
+            d.cantidad,
+            d.precio_unitario,
+            d.cantidad * d.precio_unitario AS subtotal
+        FROM detalle_pedido d
+        INNER JOIN inventario i
+            ON i.id_inventario = d.id_inventario
+        INNER JOIN jerseys j
+            ON j.id_jersey = i.id_jersey
+        INNER JOIN equipos e
+            ON e.id_equipo = j.id_equipo
+        WHERE d.id_pedido = %s
+        ORDER BY d.id_detalle;
+    """
+
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(consulta_pedido, (id_pedido,))
+            fila = cursor.fetchone()
+
+            if fila is None:
+                abort(404)
+
+            cursor.execute(consulta_detalle, (id_pedido,))
+            detalle = cursor.fetchall()
+
+    pedido = {
+        "id": fila[0],
+        "fecha": fila[1],
+        "cliente": fila[2],
+        "email": fila[3],
+        "estado": fila[4],
+        "total": fila[5],
+        "articulos": fila[6]
+    }
+
+    renglones = [
+        {
+            "equipo": r[0],
+            "temporada": r[1],
+            "tipo": r[2],
+            "talla": r[3],
+            "cantidad": r[4],
+            "precio": r[5],
+            "subtotal": r[6]
+        }
+        for r in detalle
+    ]
+
+    return render_template(
+        "pedido.html",
+        pedido=pedido,
+        renglones=renglones
+    )
 
 
 if __name__ == "__main__":
