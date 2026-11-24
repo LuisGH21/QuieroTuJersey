@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pedido {{ pedido.id }} | QuieroTuJersey</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        .contenedor {
+            max-width: 850px;
+            margin: 30px auto;
+        }
+
+        h1 {
+            color: #4ade80;
+        }
+
+        .tarjeta {
+            background: #1e293b;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        .dato {
+            margin: 6px 0;
+        }
+
+        .etiqueta {
+            color: #94a3b8;
+        }
+
+        .estado {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: #14532d;
+            color: #4ade80;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .estado.cancelado {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+
+        th {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .numero {
+            text-align: right;
+        }
+
+        .total {
+            color: #4ade80;
+            font-size: 26px;
+            font-weight: bold;
+            text-align: right;
+            margin-top: 20px;
+        }
+
+        a {
+            color: #93c5fd;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="contenedor">
+        <h1>Pedido #{{ pedido.id }} registrado</h1>
+
+        <div class="tarjeta">
+            <p class="dato">
+                <span class="etiqueta">Cliente:</span>
+                {{ pedido.cliente }} ({{ pedido.email }})
+            </p>
+            <p class="dato">
+                <span class="etiqueta">Fecha:</span>
+                {{ pedido.fecha.strftime('%d/%m/%Y %H:%M') }}
+            </p>
+            <p class="dato">
+                <span class="etiqueta">Estado:</span>
+                <span class="estado {{ pedido.estado }}">{{ pedido.estado }}</span>
+            </p>
+            <p class="dato">
+                <span class="etiqueta">Artículos:</span>
+                {{ pedido.articulos }}
+            </p>
+        </div>
+
+        <div class="tarjeta">
+            <h2>Detalle</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Jersey</th>
+                        <th>Talla</th>
+                        <th class="numero">Cantidad</th>
+                        <th class="numero">Precio</th>
+                        <th class="numero">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in renglones %}
+                        <tr>
+                            <td>{{ r.equipo }} {{ r.tipo }} {{ r.temporada }}</td>
+                            <td>{{ r.talla }}</td>
+                            <td class="numero">{{ r.cantidad }}</td>
+                            <td class="numero">${{ "%.2f"|format(r.precio) }}</td>
+                            <td class="numero">${{ "%.2f"|format(r.subtotal) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <p class="total">
+                Total: ${{ "%.2f"|format(pedido.total) }} MXN
+            </p>
+        </div>
+
+        <a href="{{ url_for('mostrar_jerseys') }}">← Volver al catálogo</a>
+    </div>
+</body>
+</html>

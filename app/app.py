@@ -1,9 +1,14 @@
 
+import json
 import os
 import platform
-from decimal import Decimal
+import re
+import secrets
+from decimal import Decimal, InvalidOperation
+from functools import wraps
 from pathlib import Path
 
+import psycopg
 from dotenv import load_dotenv
 from flask import (
     Flask,
@@ -16,6 +21,8 @@ from flask import (
     flash
 )
 
+from werkzeug.security import check_password_hash
+
 from database import obtener_conexion
 
 
@@ -25,6 +32,8 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ["FLASK_SECRET_KEY"]
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+TALLAS = ["S", "M", "L", "XL", "XXL"]
 
 
 @app.route("/")
@@ -61,24 +70,14 @@ def estado():
 def mostrar_jerseys():
     consulta = """
         SELECT
-            j.id_jersey,
-            e.nombre AS equipo,
-            j.temporada,
-            j.tipo,
-            j.precio,
-            COALESCE(SUM(i.stock), 0) AS stock
-        FROM jerseys j
-        INNER JOIN equipos e
-            ON j.id_equipo = e.id_equipo
-        LEFT JOIN inventario i
-            ON j.id_jersey = i.id_jersey
-        GROUP BY
-            j.id_jersey,
-            e.nombre,
-            j.temporada,
-            j.tipo,
-            j.precio
-        ORDER BY j.id_jersey;
+            id_jersey,
+            equipo,
+            temporada,
+            tipo,
+            precio,
+            stock_total
+        FROM v_catalogo
+        ORDER BY id_jersey;
     """
 
     with obtener_conexion() as conexion:
@@ -114,7 +113,8 @@ def detalle_jersey(id_jersey):
         FROM jerseys j
         INNER JOIN equipos e
             ON j.id_equipo = e.id_equipo
-        WHERE j.id_jersey = %s;
+        WHERE j.id_jersey = %s
+          AND j.activo;
     """
 
     consulta_tallas = """
@@ -171,9 +171,13 @@ def agregar_al_carrito(id_jersey):
         return redirect(url_for("detalle_jersey", id_jersey=id_jersey))
 
     consulta = """
-        SELECT stock
-        FROM inventario
-        WHERE id_jersey = %s AND talla = %s;
+        SELECT i.stock
+        FROM inventario i
+        INNER JOIN jerseys j
+            ON j.id_jersey = i.id_jersey
+        WHERE i.id_jersey = %s
+          AND i.talla = %s
+          AND j.activo;
     """
 
     with obtener_conexion() as conexion:
@@ -226,9 +230,8 @@ def agregar_al_carrito(id_jersey):
     return redirect(url_for("ver_carrito"))
 
 
-@app.route("/carrito")
-def ver_carrito():
-    carrito = session.get("carrito", [])
+def construir_carrito(carrito):
+    """Consulta precio y stock vigentes de cada producto del carrito."""
     productos = []
     total = Decimal("0.00")
 
@@ -279,6 +282,14 @@ def ver_carrito():
                     })
 
                     total += subtotal
+
+    return productos, total
+
+
+@app.route("/carrito")
+def ver_carrito():
+    carrito = session.get("carrito", [])
+    productos, total = construir_carrito(carrito)
 
     return render_template(
         "carrito.html",
@@ -366,6 +377,538 @@ def eliminar_del_carrito(id_jersey):
 
     flash("Producto eliminado del carrito.")
     return redirect(url_for("ver_carrito"))
+
+
+PATRON_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def validar_cliente(nombre, email):
+    if len(nombre) < 2 or len(nombre) > 150:
+        return "Escribe un nombre de entre 2 y 150 caracteres."
+
+    if len(email) > 150 or not PATRON_EMAIL.match(email):
+        return "Escribe un correo electrónico válido."
+
+    return None
+
+
+@app.route("/checkout", methods=["GET", "POST"])
+def checkout():
+    carrito = session.get("carrito", [])
+
+    if not carrito:
+        flash("Tu carrito está vacío.")
+        return redirect(url_for("ver_carrito"))
+
+    productos, total = construir_carrito(carrito)
+    nombre = request.form.get("nombre", "").strip()
+    email = request.form.get("email", "").strip()
+
+    if request.method == "POST":
+        error = validar_cliente(nombre, email)
+
+        if error:
+            flash(error)
+            return render_template(
+                "checkout.html",
+                productos=productos,
+                total=total,
+                nombre=nombre,
+                email=email
+            )
+
+        articulos = [
+            {
+                "id_jersey": item["id_jersey"],
+                "talla": item["talla"],
+                "cantidad": item["cantidad"]
+            }
+            for item in carrito
+        ]
+
+        try:
+            with obtener_conexion() as conexion:
+                with conexion.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT confirmar_pedido(%s, %s, %s::jsonb);",
+                        (nombre, email, json.dumps(articulos))
+                    )
+                    id_pedido = cursor.fetchone()[0]
+        except psycopg.errors.RaiseException as error_bd:
+            flash(
+                error_bd.diag.message_primary
+                or "No se pudo confirmar el pedido."
+            )
+            return redirect(url_for("ver_carrito"))
+
+        session["carrito"] = []
+
+        mis_pedidos = session.get("mis_pedidos", [])
+        mis_pedidos.append(id_pedido)
+        session["mis_pedidos"] = mis_pedidos[-20:]
+
+        return redirect(url_for("ver_pedido", id_pedido=id_pedido))
+
+    return render_template(
+        "checkout.html",
+        productos=productos,
+        total=total,
+        nombre=nombre,
+        email=email
+    )
+
+
+@app.route("/pedido/<int:id_pedido>")
+def ver_pedido(id_pedido):
+    # Solo se muestran los pedidos hechos desde este navegador
+    if id_pedido not in session.get("mis_pedidos", []):
+        abort(404)
+
+    consulta_pedido = """
+        SELECT id_pedido, fecha, cliente, email, estado, total, articulos
+        FROM v_pedidos_resumen
+        WHERE id_pedido = %s;
+    """
+
+    consulta_detalle = """
+        SELECT
+            e.nombre,
+            j.temporada,
+            j.tipo,
+            i.talla,
+            d.cantidad,
+            d.precio_unitario,
+            d.cantidad * d.precio_unitario AS subtotal
+        FROM detalle_pedido d
+        INNER JOIN inventario i
+            ON i.id_inventario = d.id_inventario
+        INNER JOIN jerseys j
+            ON j.id_jersey = i.id_jersey
+        INNER JOIN equipos e
+            ON e.id_equipo = j.id_equipo
+        WHERE d.id_pedido = %s
+        ORDER BY d.id_detalle;
+    """
+
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(consulta_pedido, (id_pedido,))
+            fila = cursor.fetchone()
+
+            if fila is None:
+                abort(404)
+
+            cursor.execute(consulta_detalle, (id_pedido,))
+            detalle = cursor.fetchall()
+
+    pedido = {
+        "id": fila[0],
+        "fecha": fila[1],
+        "cliente": fila[2],
+        "email": fila[3],
+        "estado": fila[4],
+        "total": fila[5],
+        "articulos": fila[6]
+    }
+
+    renglones = [
+        {
+            "equipo": r[0],
+            "temporada": r[1],
+            "tipo": r[2],
+            "talla": r[3],
+            "cantidad": r[4],
+            "precio": r[5],
+            "subtotal": r[6]
+        }
+        for r in detalle
+    ]
+
+    return render_template(
+        "pedido.html",
+        pedido=pedido,
+        renglones=renglones
+    )
+
+
+# =============================================================
+# Panel de administracion
+# =============================================================
+
+def obtener_token_csrf():
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_hex(16)
+    return session["csrf"]
+
+
+app.jinja_env.globals["csrf_token"] = obtener_token_csrf
+
+
+def admin_requerido(vista):
+    """Exige sesion de administrador y token CSRF en los POST."""
+    @wraps(vista)
+    def envoltura(*args, **kwargs):
+        if not session.get("admin"):
+            return redirect(url_for("admin_login"))
+
+        if request.method == "POST":
+            token = request.form.get("csrf", "")
+            if not secrets.compare_digest(token, session.get("csrf", "")):
+                abort(400)
+
+        return vista(*args, **kwargs)
+
+    return envoltura
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        hash_guardado = os.environ.get("ADMIN_PASSWORD_HASH", "")
+        contrasena = request.form.get("contrasena", "")
+
+        if hash_guardado and check_password_hash(hash_guardado, contrasena):
+            session.clear()
+            session["admin"] = True
+            return redirect(url_for("admin_jerseys"))
+
+        flash("Contraseña incorrecta.")
+
+    return render_template("admin_login.html")
+
+
+@app.route("/admin/logout", methods=["POST"])
+@admin_requerido
+def admin_logout():
+    session.pop("admin", None)
+    flash("Sesión de administrador cerrada.")
+    return redirect(url_for("admin_login"))
+
+
+@app.route("/admin")
+@admin_requerido
+def admin_jerseys():
+    consulta = """
+        SELECT
+            j.id_jersey,
+            e.nombre,
+            j.temporada,
+            j.tipo,
+            j.precio,
+            j.activo,
+            COALESCE(SUM(i.stock), 0) AS stock_total
+        FROM jerseys j
+        INNER JOIN equipos e
+            ON e.id_equipo = j.id_equipo
+        LEFT JOIN inventario i
+            ON i.id_jersey = j.id_jersey
+        GROUP BY j.id_jersey, e.nombre, j.temporada, j.tipo, j.precio, j.activo
+        ORDER BY j.activo DESC, j.id_jersey;
+    """
+
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(consulta)
+            filas = cursor.fetchall()
+
+    jerseys = [
+        {
+            "id": f[0],
+            "equipo": f[1],
+            "temporada": f[2],
+            "tipo": f[3],
+            "precio": f[4],
+            "activo": f[5],
+            "stock": f[6]
+        }
+        for f in filas
+    ]
+
+    return render_template("admin_jerseys.html", jerseys=jerseys)
+
+
+def obtener_equipos(cursor):
+    cursor.execute("SELECT id_equipo, nombre FROM equipos ORDER BY nombre;")
+    return cursor.fetchall()
+
+
+def leer_formulario_jersey():
+    """Lee y valida el formulario de jersey. Devuelve (datos, error)."""
+    datos = {
+        "id_equipo": request.form.get("id_equipo", ""),
+        "temporada": request.form.get("temporada", "").strip(),
+        "tipo": request.form.get("tipo", "").strip(),
+        "precio": request.form.get("precio", "").strip(),
+        "descripcion": request.form.get("descripcion", "").strip(),
+        "activo": request.form.get("activo") == "on",
+        "stock": {}
+    }
+
+    try:
+        datos["id_equipo"] = int(datos["id_equipo"])
+    except ValueError:
+        return datos, "Selecciona un equipo."
+
+    if not 1 <= len(datos["temporada"]) <= 20:
+        return datos, "La temporada debe tener entre 1 y 20 caracteres."
+
+    if not 1 <= len(datos["tipo"]) <= 30:
+        return datos, "El tipo debe tener entre 1 y 30 caracteres."
+
+    try:
+        datos["precio"] = Decimal(datos["precio"])
+    except InvalidOperation:
+        return datos, "Escribe un precio válido."
+
+    if datos["precio"] <= 0 or datos["precio"] >= Decimal("100000000"):
+        return datos, "El precio debe ser mayor que cero."
+
+    for talla in TALLAS:
+        valor = request.form.get(f"stock_{talla}", "0").strip() or "0"
+        try:
+            datos["stock"][talla] = int(valor)
+        except ValueError:
+            return datos, f"El stock de la talla {talla} debe ser un número entero."
+
+        if datos["stock"][talla] < 0:
+            return datos, f"El stock de la talla {talla} no puede ser negativo."
+
+    return datos, None
+
+
+def guardar_stock(cursor, id_jersey, stock):
+    for talla, cantidad in stock.items():
+        cursor.execute(
+            """
+            INSERT INTO inventario (id_jersey, talla, stock)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (id_jersey, talla)
+                DO UPDATE SET stock = EXCLUDED.stock;
+            """,
+            (id_jersey, talla, cantidad)
+        )
+
+
+@app.route("/admin/jerseys/nuevo", methods=["GET", "POST"])
+@admin_requerido
+def admin_nuevo_jersey():
+    datos = {"activo": True, "stock": {t: 0 for t in TALLAS}}
+
+    if request.method == "POST":
+        datos, error = leer_formulario_jersey()
+
+        if error is None:
+            try:
+                with obtener_conexion() as conexion:
+                    with conexion.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            INSERT INTO jerseys
+                                (id_equipo, temporada, tipo, precio, descripcion, activo)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            RETURNING id_jersey;
+                            """,
+                            (
+                                datos["id_equipo"], datos["temporada"],
+                                datos["tipo"], datos["precio"],
+                                datos["descripcion"] or None, datos["activo"]
+                            )
+                        )
+                        id_jersey = cursor.fetchone()[0]
+                        guardar_stock(cursor, id_jersey, datos["stock"])
+            except psycopg.errors.UniqueViolation:
+                error = "Ya existe un jersey de ese equipo, temporada y tipo."
+
+        if error is None:
+            flash("Jersey creado correctamente.")
+            return redirect(url_for("admin_jerseys"))
+
+        flash(error)
+
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            equipos = obtener_equipos(cursor)
+
+    return render_template(
+        "admin_jersey_form.html",
+        titulo="Nuevo jersey",
+        datos=datos,
+        equipos=equipos,
+        tallas=TALLAS
+    )
+
+
+@app.route("/admin/jerseys/<int:id_jersey>/editar", methods=["GET", "POST"])
+@admin_requerido
+def admin_editar_jersey(id_jersey):
+    if request.method == "POST":
+        datos, error = leer_formulario_jersey()
+
+        if error is None:
+            try:
+                with obtener_conexion() as conexion:
+                    with conexion.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            UPDATE jerseys
+                               SET id_equipo = %s,
+                                   temporada = %s,
+                                   tipo = %s,
+                                   precio = %s,
+                                   descripcion = %s,
+                                   activo = %s
+                             WHERE id_jersey = %s
+                            RETURNING id_jersey;
+                            """,
+                            (
+                                datos["id_equipo"], datos["temporada"],
+                                datos["tipo"], datos["precio"],
+                                datos["descripcion"] or None, datos["activo"],
+                                id_jersey
+                            )
+                        )
+
+                        if cursor.fetchone() is None:
+                            abort(404)
+
+                        guardar_stock(cursor, id_jersey, datos["stock"])
+            except psycopg.errors.UniqueViolation:
+                error = "Ya existe un jersey de ese equipo, temporada y tipo."
+
+        if error is None:
+            flash("Jersey actualizado correctamente.")
+            return redirect(url_for("admin_jerseys"))
+
+        flash(error)
+    else:
+        with obtener_conexion() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id_equipo, temporada, tipo, precio, descripcion, activo
+                    FROM jerseys
+                    WHERE id_jersey = %s;
+                    """,
+                    (id_jersey,)
+                )
+                fila = cursor.fetchone()
+
+                if fila is None:
+                    abort(404)
+
+                cursor.execute(
+                    "SELECT talla, stock FROM inventario WHERE id_jersey = %s;",
+                    (id_jersey,)
+                )
+                stock = {t: 0 for t in TALLAS}
+                stock.update(dict(cursor.fetchall()))
+
+        datos = {
+            "id_equipo": fila[0],
+            "temporada": fila[1],
+            "tipo": fila[2],
+            "precio": fila[3],
+            "descripcion": fila[4] or "",
+            "activo": fila[5],
+            "stock": stock
+        }
+
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            equipos = obtener_equipos(cursor)
+
+    return render_template(
+        "admin_jersey_form.html",
+        titulo=f"Editar jersey #{id_jersey}",
+        datos=datos,
+        equipos=equipos,
+        tallas=TALLAS
+    )
+
+
+@app.route("/admin/jerseys/<int:id_jersey>/eliminar", methods=["POST"])
+@admin_requerido
+def admin_eliminar_jersey(id_jersey):
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM detalle_pedido d
+                    INNER JOIN inventario i
+                        ON i.id_inventario = d.id_inventario
+                    WHERE i.id_jersey = %s
+                );
+                """,
+                (id_jersey,)
+            )
+            tiene_pedidos = cursor.fetchone()[0]
+
+            if tiene_pedidos:
+                # Baja logica: se conserva el historial de pedidos
+                cursor.execute(
+                    "UPDATE jerseys SET activo = FALSE WHERE id_jersey = %s;",
+                    (id_jersey,)
+                )
+                mensaje = "El jersey tiene pedidos: se desactivó en lugar de eliminarse."
+            else:
+                cursor.execute(
+                    "DELETE FROM inventario WHERE id_jersey = %s;",
+                    (id_jersey,)
+                )
+                cursor.execute(
+                    "DELETE FROM jerseys WHERE id_jersey = %s;",
+                    (id_jersey,)
+                )
+                mensaje = "Jersey eliminado correctamente."
+
+    flash(mensaje)
+    return redirect(url_for("admin_jerseys"))
+
+
+@app.route("/admin/pedidos")
+@admin_requerido
+def admin_pedidos():
+    with obtener_conexion() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id_pedido, fecha, cliente, email, estado, total, articulos
+                FROM v_pedidos_resumen
+                ORDER BY id_pedido DESC;
+                """
+            )
+            filas = cursor.fetchall()
+
+    pedidos = [
+        {
+            "id": f[0],
+            "fecha": f[1],
+            "cliente": f[2],
+            "email": f[3],
+            "estado": f[4],
+            "total": f[5],
+            "articulos": f[6]
+        }
+        for f in filas
+    ]
+
+    return render_template("admin_pedidos.html", pedidos=pedidos)
+
+
+@app.route("/admin/pedidos/<int:id_pedido>/cancelar", methods=["POST"])
+@admin_requerido
+def admin_cancelar_pedido(id_pedido):
+    try:
+        with obtener_conexion() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute("SELECT cancelar_pedido(%s);", (id_pedido,))
+        flash(f"Pedido #{id_pedido} cancelado; el stock se devolvió al inventario.")
+    except psycopg.errors.RaiseException as error_bd:
+        flash(error_bd.diag.message_primary or "No se pudo cancelar el pedido.")
+
+    return redirect(url_for("admin_pedidos"))
 
 
 if __name__ == "__main__":

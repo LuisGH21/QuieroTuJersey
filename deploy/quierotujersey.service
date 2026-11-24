@@ -1,0 +1,32 @@
+# =============================================================
+# QuieroTuJersey - servicio systemd de Gunicorn
+# Destino: /etc/systemd/system/quierotujersey.service
+# =============================================================
+
+[Unit]
+Description=QuieroTuJersey (Gunicorn + Flask)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=quierotujersey
+Group=quierotujersey
+WorkingDirectory=/srv/quierotujersey
+ExecStart=/srv/quierotujersey/.venv/bin/gunicorn \
+    --chdir /srv/quierotujersey/app \
+    --workers 3 \
+    --bind 127.0.0.1:8000 \
+    --access-logfile - \
+    app:app
+Restart=on-failure
+RestartSec=5
+
+# Endurecimiento basico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,56 @@
+{% extends "admin_base.html" %}
+
+{% block titulo %}Pedidos{% endblock %}
+
+{% block contenido %}
+    <h1>Pedidos</h1>
+
+    <div class="tarjeta">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th class="numero">Artículos</th>
+                    <th class="numero">Total</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pedido in pedidos %}
+                    <tr>
+                        <td>{{ pedido.id }}</td>
+                        <td>{{ pedido.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td>
+                            {{ pedido.cliente }}<br>
+                            <small>{{ pedido.email }}</small>
+                        </td>
+                        <td class="numero">{{ pedido.articulos }}</td>
+                        <td class="numero">${{ "%.2f"|format(pedido.total) }}</td>
+                        <td>
+                            <span class="etiqueta {{ pedido.estado }}">{{ pedido.estado }}</span>
+                        </td>
+                        <td>
+                            {% if pedido.estado != 'cancelado' %}
+                                <form
+                                    method="POST"
+                                    action="{{ url_for('admin_cancelar_pedido', id_pedido=pedido.id) }}"
+                                    onsubmit="return confirm('¿Cancelar el pedido #{{ pedido.id }}? El stock regresará al inventario.');"
+                                >
+                                    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                                    <button class="boton rojo" type="submit">Cancelar</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="7">Todavía no hay pedidos.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}

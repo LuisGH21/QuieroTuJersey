@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmar compra | QuieroTuJersey</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        .contenedor {
+            max-width: 850px;
+            margin: 30px auto;
+        }
+
+        h1 {
+            color: #60a5fa;
+        }
+
+        .tarjeta {
+            background: #1e293b;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+
+        th {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .numero {
+            text-align: right;
+        }
+
+        .total {
+            color: #4ade80;
+            font-size: 26px;
+            font-weight: bold;
+            text-align: right;
+            margin-top: 20px;
+        }
+
+        label {
+            display: block;
+            margin: 18px 0 8px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        .boton {
+            width: 100%;
+            margin-top: 25px;
+            padding: 14px;
+            background: #16a34a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .boton:hover {
+            background: #15803d;
+        }
+
+        .alerta {
+            background: #334155;
+            color: #fbbf24;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        a {
+            color: #93c5fd;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="contenedor">
+        <h1>Confirmar compra</h1>
+
+        <a href="{{ url_for('ver_carrito') }}">← Regresar al carrito</a>
+
+        {% for mensaje in get_flashed_messages() %}
+            <div class="alerta">{{ mensaje }}</div>
+        {% endfor %}
+
+        <div class="tarjeta">
+            <h2>Resumen del pedido</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Jersey</th>
+                        <th>Talla</th>
+                        <th class="numero">Cantidad</th>
+                        <th class="numero">Precio</th>
+                        <th class="numero">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for producto in productos %}
+                        <tr>
+                            <td>
+                                {{ producto.equipo }} {{ producto.tipo }}
+                                {{ producto.temporada }}
+                            </td>
+                            <td>{{ producto.talla }}</td>
+                            <td class="numero">{{ producto.cantidad }}</td>
+                            <td class="numero">${{ "%.2f"|format(producto.precio) }}</td>
+                            <td class="numero">${{ "%.2f"|format(producto.subtotal) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <p class="total">
+                Total: ${{ "%.2f"|format(total) }} MXN
+            </p>
+        </div>
+
+        <div class="tarjeta">
+            <h2>Tus datos</h2>
+
+            <form method="POST" action="{{ url_for('checkout') }}">
+                <label for="nombre">Nombre completo</label>
+                <input
+                    type="text"
+                    id="nombre"
+                    name="nombre"
+                    maxlength="150"
+                    value="{{ nombre }}"
+                    required
+                >
+
+                <label for="email">Correo electrónico</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    maxlength="150"
+                    value="{{ email }}"
+                    required
+                >
+
+                <button class="boton" type="submit">
+                    Confirmar pedido
+                </button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

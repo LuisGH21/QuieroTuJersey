@@ -39,6 +39,11 @@
             background: #1d4ed8;
         }
 
+        .info a {
+            color: #93c5fd;
+            text-decoration: none;
+        }
+
         .info {
             margin-top: 30px;
             color: #94a3b8;
@@ -59,6 +64,7 @@
         <div class="info">
             <p>Sistema operativo: {{ sistema }}</p>
             <p>Python {{ version_python }} · Flask · PostgreSQL</p>
+            <p><a href="{{ url_for('admin_login') }}">Administración</a></p>
         </div>
     </div>
 </body>
